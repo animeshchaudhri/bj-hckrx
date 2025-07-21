@@ -14,7 +14,18 @@ from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 import requests
- 
+import os
+from dotenv import load_dotenv
+import openai
+
+load_dotenv()
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_BASE = os.getenv("OPENAI_API_BASE")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL")
+
+openai.api_key = OPENAI_API_KEY
+openai.api_base = OPENAI_API_BASE
 # Setup logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,19 +55,18 @@ async def query_llm_async(text: str, task: str) -> str:
         if task.lower().startswith(("summarize", "overview", "key points"))
         else f"Answer the query based on the text in 100 words or less:\nText: {text[:2000]}...\nQuery: {task}"
     )
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {"maxOutputTokens": 150}
-    }
-    headers = {"Content-Type": "application/json"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{GEMINI_API_URL}?key={GEMINI_API_KEY}", json=payload, headers=headers) as resp:
-            if resp.status != 200:
-                err = await resp.text()
-                logger.error(f"Gemini error: {err}")
-                raise HTTPException(status_code=500, detail="LLM error")
-            data = await resp.json()
-            return data.get("candidates", [{}])[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+
+    try:
+        response = await openai.ChatCompletion.acreate(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=200,
+            temperature=0.7,
+        )
+        return response.choices[0].message["content"].strip()
+    except Exception as e:
+        logger.error(f"OpenAI Error: {e}")
+        raise HTTPException(status_code=500, detail="LLM failure")
  
 def extract_pdf_text(file_bytes: bytes) -> Tuple[Optional[str], Optional[str]]:
     try:
